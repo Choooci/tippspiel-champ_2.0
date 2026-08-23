@@ -130,14 +130,14 @@ def get_or_create_season(season_name: str):
     """Saison in Supabase anlegen oder holen."""
     try:
         # Erst prüfen, ob Saison schon existiert
-        result = supabase.table("seasons").select("*").eq("text", season_name).execute()
+        result = supabase.table("seasons").select("*").eq("name", season_name).execute()
         
         if result.data and len(result.data) > 0:
             return result.data[0]
         
         # Wenn nicht → neu anlegen
         new_season = {
-            "text": season_name,  # ← nicht season_name, sondern text!
+            "name": season_name,
             "is_active": True,
             "draft_status": "waiting",
             "draft_order": ""
