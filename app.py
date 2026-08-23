@@ -7,7 +7,7 @@ from datetime import datetime
 # --- KONFIGURATION ---
 SUPABASE_URL = st.secrets["supabase_url"]
 SUPABASE_KEY = st.secrets["supabase_key"]
-AKTUELLE_SAISON = "2025/2026"
+AKTUELLE_SAISON = "2026/2027"
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
