@@ -1,6 +1,7 @@
 import streamlit as st
 import random
 import json
+import requests
 from supabase import create_client, Client
 from datetime import datetime
 
@@ -119,10 +120,36 @@ def save_draft_pick(season_id, player_id, team_id, pick_order):
     except Exception as e:
         st.error(f"Fehler beim Speichern des Draft-Picks: {str(e)}")
 
-def get_bundesliga_table():
-    """Holt die aktuelle Bundesliga-Tabelle."""
-    # Placeholder – hier könnte eine API-Integration folgen
-    return None
+def load_teams_from_openligadb(season_year):
+    """Lädt Teams von OpenLigaDB und speichert sie in der DB."""
+    try:
+        url = f"https://api.openligadb.de/getbltable/bl1/{season_year}"
+        response = requests.get(url)
+        response.raise_for_status()
+        
+        table_data = response.json()
+        
+        added_count = 0
+        
+        for team in table_data:
+            # Prüfe, ob Team bereits existiert
+            existing = supabase.table("teams").select("*").eq("team_name", team["TeamName"]).eq("season_id", season_id).execute()
+            
+            if not existing.data:
+                supabase.table("teams").insert({
+                    "season_id": season_id,
+                    "team_name": team["TeamName"],
+                    "logo_url": team.get("TeamIconUrl", "⚽")
+                }).execute()
+                added_count += 1
+        
+        if added_count > 0:
+            st.success(f"✅ {added_count} neue Teams geladen!")
+        else:
+            st.info("ℹ️ Alle Teams sind bereits in der DB.")
+        st.rerun()
+    except Exception as e:
+        st.error(f"Fehler beim Laden von OpenLigaDB: {str(e)}")
 
 # --- HAUPTAPP ---
 
@@ -155,6 +182,55 @@ else:
 
 # Draft-Status laden
 draft_status = get_draft_status(season_id)
+
+# --- ADMIN-BEREICH ---
+if is_admin:
+    with st.sidebar.expander("🔧 Admin-Panel", expanded=False):
+        admin_tab1, admin_tab2 = st.tabs(["👥 Spieler", "⚽ Teams"])
+        
+        with admin_tab1:
+            st.subheader("Spieler verwalten")
+            new_player_name = st.text_input("Neuer Spieler:", key="new_player_input")
+            if st.button("➕ Spieler hinzufügen"):
+                if new_player_name:
+                    try:
+                        supabase.table("players").insert({"name": new_player_name}).execute()
+                        st.success(f"✅ {new_player_name} hinzugefügt!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Fehler: {str(e)}")
+                else:
+                    st.warning("Bitte Namen eingeben!")
+        
+        with admin_tab2:
+            st.subheader("Teams verwalten")
+            
+            if st.button("🔄 Teams von OpenLigaDB laden (2026)"):
+                load_teams_from_openligadb(2026)
+            
+            st.write("---")
+            st.write("**Manuell hinzufügen:**")
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                team_name = st.text_input("Team-Name:", key="manual_team_name")
+            with col2:
+                logo_url = st.text_input("Logo-URL:", key="manual_logo_url")
+            
+            if st.button("➕ Team manuell hinzufügen"):
+                if team_name and logo_url:
+                    try:
+                        supabase.table("teams").insert({
+                            "season_id": season_id,
+                            "team_name": team_name,
+                            "logo_url": logo_url
+                        }).execute()
+                        st.success(f"✅ {team_name} hinzugefügt!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Fehler: {str(e)}")
+                else:
+                    st.warning("Bitte Team-Name und Logo eingeben!")
 
 # --- HAUPTBEREICH DER APP ---
 
