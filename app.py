@@ -11,6 +11,11 @@ supabase: Client = create_client(url, key)
 
 st.set_page_config(page_title="Bundesliga Tippspiel 2.0", layout="wide")
 
+# --- KONSTANTEN ---
+AKTUELLE_SAISON = "2026-27"
+DRAFT_REIHENFOLGE = "1234432112344321" * 2
+ADMIN_SPIELER = "Choci"  # Nur dieser Spieler darf auslosen
+
 # --- DATENBANKFUNKTIONEN ---
 
 def get_or_create_season(season_name):
