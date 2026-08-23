@@ -46,6 +46,25 @@ def get_teams_for_season(season_id):
     result = supabase.table("teams").select("*").eq("season_id", season_id).execute()
     return result.data if result.data else []
 
+
+def get_draft_order(season_id):
+    """Holt die ausgeloste Draft-Reihenfolge."""
+    try:
+        result = supabase.table("seasons").select("draft_order").eq("id", season_id).single().execute()
+        return result.data.get("draft_order") if result.data else None
+    except Exception as e:
+        st.error(f"Fehler beim Abrufen der Draft-Reihenfolge: {str(e)}")
+        return None
+
+def save_draft_order(season_id, draft_order):
+    """Speichert die ausgeloste Draft-Reihenfolge."""
+    try:
+        supabase.table("seasons").update({"draft_order": draft_order}).eq("id", season_id).execute()
+    except Exception as e:
+        st.error(f"Fehler beim Speichern der Draft-Reihenfolge: {str(e)}")
+
+
+
 def get_top6_tips_for_player(season_id, player_id):
     """Top-6 Tipps eines Spielers."""
     result = supabase.table("top6_tips").select("*").eq("season_id", season_id).eq("player_id", player_id).execute()
@@ -86,6 +105,8 @@ def get_bundesliga_table():
     except Exception as e:
         st.error(f"Fehler beim Laden der Tabelle: {str(e)}")
         return None
+
+
 
 # ============================================
 # SEITENLOGIK
