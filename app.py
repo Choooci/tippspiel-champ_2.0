@@ -72,44 +72,6 @@ def save_draft_order(season_id, draft_order):
     except Exception as e:
         st.error(f"Fehler beim Speichern: {str(e)}")
 
-# --- HAUPTBEREICH DER APP ---
-
-if draft_status == "waiting":
-    st.subheader("🎲 Draft-Reihenfolge auslosen")
-    if st.button("Reihenfolge auslosen"):
-        draft_order = list(range(1, len(players) + 1))
-        random.shuffle(draft_order)
-        save_draft_order(season_id, "".join(map(str, draft_order)))
-        update_draft_status(season_id, "drawing")
-        st.rerun()
-
-elif draft_status == "drawing":
-    st.success("✅ Draft-Reihenfolge wurde ausgelost!")
-    
-    draft_order = get_draft_order(season_id)
-    
-    # Zeige die Draft-Reihenfolge an
-    st.subheader("🎲 Draft-Reihenfolge:")
-    if draft_order:
-        order_list = [int(d) for d in draft_order[:len(players)]]
-        st.write("---")
-        for i, pos in enumerate(order_list, 1):
-            st.write(f"**Pick {i}:** {player_names[pos-1]}")
-        st.write("---")
-    
-    # Nur Choci kann weiter machen
-    if is_admin:
-        st.info("Du bist Admin – Starte jetzt den Team-Draft!")
-        if st.button("➡️ Jetzt zum Team-Draft starten", key="start_draft"):
-            update_draft_status(season_id, "team_draft")
-            st.rerun()
-    else:
-        st.info("⏳ Warte bis Choci den Team-Draft startet...")
-
-elif draft_status == "team_draft":
-    st.subheader("👥 Team-Draft")
-    st.write("Draft läuft...")
-
 def update_draft_status(season_id, status):
     """Updated Draft-Status."""
     try:
@@ -157,6 +119,47 @@ def get_bundesliga_table():
         return None
     except:
         return None
+
+
+# --- HAUPTBEREICH DER APP ---
+
+if draft_status == "waiting":
+    st.subheader("🎲 Draft-Reihenfolge auslosen")
+    if st.button("Reihenfolge auslosen"):
+        draft_order = list(range(1, len(players) + 1))
+        random.shuffle(draft_order)
+        save_draft_order(season_id, "".join(map(str, draft_order)))
+        update_draft_status(season_id, "drawing")
+        st.rerun()
+
+elif draft_status == "drawing":
+    st.success("✅ Draft-Reihenfolge wurde ausgelost!")
+    
+    draft_order = get_draft_order(season_id)
+    
+    # Zeige die Draft-Reihenfolge an
+    st.subheader("🎲 Draft-Reihenfolge:")
+    if draft_order:
+        order_list = [int(d) for d in draft_order[:len(players)]]
+        st.write("---")
+        for i, pos in enumerate(order_list, 1):
+            st.write(f"**Pick {i}:** {player_names[pos-1]}")
+        st.write("---")
+    
+    # Nur Choci kann weiter machen
+    if is_admin:
+        st.info("Du bist Admin – Starte jetzt den Team-Draft!")
+        if st.button("➡️ Jetzt zum Team-Draft starten", key="start_draft"):
+            update_draft_status(season_id, "team_draft")
+            st.rerun()
+    else:
+        st.info("⏳ Warte bis Choci den Team-Draft startet...")
+
+elif draft_status == "team_draft":
+    st.subheader("👥 Team-Draft")
+    st.write("Draft läuft...")
+
+
 
 # --- HAUPTAPP ---
 
