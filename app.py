@@ -198,9 +198,19 @@ elif draft_status == "drawing":
     # Nur Admin kann weiter machen
     if is_admin:
         st.info("📋 Du bist Admin – Starte jetzt den Team-Draft!")
-        if st.button("▶️ Team-Draft starten", key="start_team_draft"):
-            update_draft_status(season_id, "team_draft")
-            st.rerun()
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🔄 Reihenfolge neu auslosen", key="redraw_button"):
+                draft_order = list(range(1, len(players) + 1))
+                random.shuffle(draft_order)
+                save_draft_order(season_id, draft_order)
+                st.rerun()
+        
+        with col2:
+            if st.button("▶️ Team-Draft starten", key="start_team_draft"):
+                update_draft_status(season_id, "team_draft")
+                st.rerun()
     else:
         st.info("⏳ Warte darauf, dass Choci den Team-Draft startet...")
 
