@@ -133,13 +133,13 @@ def load_teams_from_openligadb(season_year):
         
         for team in table_data:
             # Prüfe, ob Team bereits existiert
-            existing = supabase.table("teams").select("*").eq("team_name", team["TeamName"]).eq("season_id", season_id).execute()
+            existing = supabase.table("teams").select("*").eq("team_name", team["teamName"]).eq("season_id", season_id).execute()
             
             if not existing.data:
                 supabase.table("teams").insert({
                     "season_id": season_id,
-                    "team_name": team["TeamName"],
-                    "logo_url": team.get("TeamIconUrl", "⚽")
+                    "team_name": team["teamName"],
+                    "logo_url": team.get("teamIconUrl", "⚽")
                 }).execute()
                 added_count += 1
         
