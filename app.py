@@ -120,7 +120,7 @@ def save_draft_pick(season_id, player_id, team_id, pick_order):
     except Exception as e:
         st.error(f"Fehler beim Speichern des Draft-Picks: {str(e)}")
 
-def load_teams_from_openligadb(season_year):
+def load_teams_from_openligadb(season_year, season_id):
     """Lädt Teams von OpenLigaDB und speichert sie in der DB."""
     try:
         url = f"https://api.openligadb.de/getbltable/bl1/{season_year}"
@@ -129,7 +129,7 @@ def load_teams_from_openligadb(season_year):
         
         table_data = response.json()
         
-        # Lösche zuerst alle Teams für diese Saison
+        # ✅ RICHTIG: season_id wird mitgegeben
         supabase.table("teams").delete().eq("season_id", season_id).execute()
         
         added_count = 0
