@@ -19,15 +19,16 @@ ADMIN_SPIELER = "Choci"  # Nur dieser Spieler darf auslosen
 # --- DATENBANKFUNKTIONEN ---
 
 def get_or_create_season(season_name):
+    """Sucht oder erstellt eine Saison."""
     try:
-        result = supabase.table("seasons").select("*").eq("season_name", season_name).single().execute()
+        result = supabase.table("seasons").select("*").eq("name", season_name).single().execute()
         return result.data
     except:
+        # Erstellen, falls nicht vorhanden
         new_season = supabase.table("seasons").insert({
-            "season_name": season_name,
-            "draft_completed": False,
-            "draft_order": None,
-            "draft_stage": "waiting"  # waiting, drawing, team_draft, completed
+            "name": season_name,
+            "is_active": True,
+            "draft_order": None
         }).execute()
         return new_season.data[0]
 
