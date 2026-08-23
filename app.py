@@ -26,7 +26,7 @@ def get_or_create_season(season_name):
     new_season = {
         "name": season_name,
         "is_active": True,
-        "draft_order": None
+        "draft_status": "waiting"
     }
     result = supabase.table("seasons").insert(new_season).execute()
     return result.data[0] if result.data else new_season
@@ -133,12 +133,25 @@ st.title("⚽ Bundesliga Tippspiel 2.0")
 season = get_or_create_season(AKTUELLE_SAISON)
 season_id = season["id"]
 
-# Spieler und Admin-Status laden
+# Spieler laden
 players = get_players()
 player_names = [p["name"] for p in players] if players else []
 
-# Dummy für Admin-Check (anpassbar)
-is_admin = st.secrets.get("admin_user") == st.session_state.get("user", None)
+# --- SPIELER AUSWÄHLEN ---
+st.sidebar.subheader("👤 Dein Profil")
+current_player = st.sidebar.selectbox(
+    "Wähle deinen Namen:",
+    player_names if player_names else ["Keine Spieler vorhanden"]
+)
+
+# Admin-Check
+is_admin = current_player == "Choci"
+
+# UI für Admin vs. Zuschauer
+if is_admin:
+    st.sidebar.success(f"✅ Du bist Admin!")
+else:
+    st.sidebar.info(f"👀 Du beobachtest als {current_player}")
 
 # Draft-Status laden
 draft_status = get_draft_status(season_id)
@@ -151,12 +164,15 @@ if draft_status == "waiting":
     if not players:
         st.warning("⚠️ Keine Spieler in der Datenbank. Bitte zuerst Spieler hinzufügen!")
     else:
-        if st.button("Reihenfolge auslosen"):
-            draft_order = list(range(1, len(players) + 1))
-            random.shuffle(draft_order)
-            save_draft_order(season_id, draft_order)  # JSON wird in der Funktion gemacht
-            update_draft_status(season_id, "drawing")
-            st.rerun()
+        if is_admin:
+            if st.button("🎰 Reihenfolge auslosen", key="draw_button"):
+                draft_order = list(range(1, len(players) + 1))
+                random.shuffle(draft_order)
+                save_draft_order(season_id, draft_order)
+                update_draft_status(season_id, "drawing")
+                st.rerun()
+        else:
+            st.info("⏳ Warte darauf, dass Choci die Reihenfolge auslost...")
 
 elif draft_status == "drawing":
     st.success("✅ Draft-Reihenfolge wurde ausgelost!")
@@ -182,20 +198,22 @@ elif draft_status == "drawing":
     # Nur Admin kann weiter machen
     if is_admin:
         st.info("📋 Du bist Admin – Starte jetzt den Team-Draft!")
-        if st.button("Team-Draft starten"):
+        if st.button("▶️ Team-Draft starten", key="start_team_draft"):
             update_draft_status(season_id, "team_draft")
             st.rerun()
     else:
-        st.info("⏳ Warte darauf, dass der Admin den Team-Draft startet...")
+        st.info("⏳ Warte darauf, dass Choci den Team-Draft startet...")
 
 elif draft_status == "team_draft":
     st.subheader("🏆 Team-Draft")
     st.write("Der Team-Draft läuft... (noch nicht implementiert)")
     
     if is_admin:
-        if st.button("Draft abschließen"):
+        if st.button("✅ Draft abschließen", key="complete_draft"):
             complete_draft(season_id)
             st.rerun()
+    else:
+        st.info("👀 Der Team-Draft läuft...")
 
 elif draft_status == "completed":
     st.success("🎉 Draft abgeschlossen!")
