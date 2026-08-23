@@ -221,44 +221,76 @@ def get_draft_order(season_id: int) -> list[dict]:
     return daten_oder_leere_liste(response)
 
 
-def save_draft_order(season_id, player_ids):
+def save_draft_order(
+    season_id: int,
+    player_ids: list[int],
+) -> None:
     """
-    Speichert die ausgeloste Reihenfolge dauerhaft in Supabase.
-    Vorher werden alte Einträge dieser Saison gelöscht.
+    Speichert immer die vollständige Draft-Reihenfolge mit 16 Picks.
+
+    Übergabe möglich:
+    - 4 Spieler der Auslosung
+    - oder bereits 16 vollständige Draftpositionen
     """
 
-    if len(player_ids) != 4:
-        raise ValueError("Es müssen genau vier Spieler vorhanden sein.")
+    if len(player_ids) == ANZAHL_SPIELER:
+        # Aus 4 Sitzpositionen die 16 Picks erzeugen
+        complete_order_ids = [
+            player_ids[position]
+            for position in SNAKE_REIHENFOLGE
+        ]
 
-    # Alte Reihenfolge dieser Saison löschen
-    supabase.table("draft_order") \
-        .delete() \
-        .eq("season_id", season_id) \
+    elif len(player_ids) == ANZAHL_PICKS:
+        # Bereits vollständige Reihenfolge
+        complete_order_ids = player_ids
+
+    else:
+        raise ValueError(
+            f"Es werden entweder {ANZAHL_SPIELER} oder "
+            f"{ANZAHL_PICKS} Spieler benötigt. "
+            f"Erhalten: {len(player_ids)}"
+        )
+
+    # Alte Reihenfolge löschen
+    (
+        supabase
+        .table("draft_order")
+        .delete()
+        .eq("season_id", season_id)
         .execute()
+    )
 
-    # Neue Reihenfolge vorbereiten
-    draft_order_rows = [
+    # Die vollständigen 16 Draftpositionen speichern
+    rows = [
         {
             "season_id": season_id,
             "player_id": player_id,
             "position": position,
         }
-        for position, player_id in enumerate(player_ids, start=1)
+        for position, player_id in enumerate(
+            complete_order_ids,
+            start=1,
+        )
     ]
 
-    # Neue Reihenfolge speichern
-    supabase.table("draft_order") \
-        .insert(draft_order_rows) \
+    (
+        supabase
+        .table("draft_order")
+        .insert(rows)
         .execute()
+    )
 
     # Saisonstatus aktualisieren
-    supabase.table("seasons") \
+    (
+        supabase
+        .table("seasons")
         .update({
-            "draft_order": ",".join(str(player_id) for player_id in player_ids),
-            "draft_status": "ready",
-        }) \
-        .eq("id", season_id) \
+            "draft_order": json.dumps(complete_order_ids),
+            "draft_status": "drawing",
+        })
+        .eq("id", season_id)
         .execute()
+    )
 
 
 def reset_draft_order(season_id: int) -> None:
@@ -695,33 +727,37 @@ with tab_draft:
                 "🎰 Sitzreihenfolge auslosen",
                 type="primary",
             ):
-                shuffled_players = players.copy()
-                random.shuffle(shuffled_players)
+                try:
+                    shuffled_players = players.copy()
+                    random.shuffle(shuffled_players)
+            
+                    seat_order_ids = [
+                        player["id"]
+                        for player in shuffled_players
+                    ]
+            
+                    if len(seat_order_ids) != ANZAHL_SPIELER:
+                        st.error(
+                            f"Es müssen genau {ANZAHL_SPIELER} Spieler "
+                            f"vorhanden sein."
+                        )
+                        st.stop()
+            
+                    save_draft_order(
+                        season_id,
+                        seat_order_ids,
+                    )
+            
+                    st.success(
+                        "Die Draft-Reihenfolge wurde erfolgreich ausgelost."
+                    )
+            
+                    st.rerun()
 
-                first_round_player_ids = [
-                    player["id"]
-                    for player in shuffled_players
-                ]
-
-                complete_order_ids = [
-                    first_round_player_ids[index]
-                    for index in SNAKE_REIHENFOLGE
-                ]
-
-                save_draft_order(
-                    season_id,
-                    complete_order_ids,
-                )
-
-                update_draft_status(
-                    season_id,
-                    "drawing",
-                )
-
-                st.success(
-                    "Die Draft-Reihenfolge wurde erfolgreich ausgelost."
-                )
-                st.rerun()
+    except Exception as error:
+        st.error(
+            f"Die Auslosung konnte nicht gespeichert werden: {error}"
+        )
         else:
             st.info(
                 "Warte, bis der Admin die Sitzreihenfolge auslost."
