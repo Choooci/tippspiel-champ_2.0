@@ -221,21 +221,23 @@ def get_draft_order(season_id: int) -> list[dict]:
     return daten_oder_leere_liste(response)
 
 
-def save_draft_order(
-    season_id: int,
-    player_ids: list[int],
-) -> None:
-    """Speichert die vollständigen 16 Draftpositionen."""
-    # Sicherheitshalber alte Draftreihenfolge löschen
-    (
-        supabase
-        .table("draft_order")
-        .delete()
-        .eq("season_id", season_id)
-        .execute()
-    )
+def save_draft_order(season_id, player_ids):
+    """
+    Speichert die ausgeloste Reihenfolge dauerhaft in Supabase.
+    Vorher werden alte Einträge dieser Saison gelöscht.
+    """
 
-    rows = [
+    if len(player_ids) != 4:
+        raise ValueError("Es müssen genau vier Spieler vorhanden sein.")
+
+    # Alte Reihenfolge dieser Saison löschen
+    supabase.table("draft_order") \
+        .delete() \
+        .eq("season_id", season_id) \
+        .execute()
+
+    # Neue Reihenfolge vorbereiten
+    draft_order_rows = [
         {
             "season_id": season_id,
             "player_id": player_id,
@@ -244,25 +246,19 @@ def save_draft_order(
         for position, player_id in enumerate(player_ids, start=1)
     ]
 
-    (
-        supabase
-        .table("draft_order")
-        .insert(rows)
+    # Neue Reihenfolge speichern
+    supabase.table("draft_order") \
+        .insert(draft_order_rows) \
         .execute()
-    )
 
-    # Zusätzlich speichern wir die Reihenfolge als JSON
-    # in seasons.draft_order. Das ist praktisch für spätere
-    # Exporte und Rückwärtskompatibilität.
-    (
-        supabase
-        .table("seasons")
+    # Saisonstatus aktualisieren
+    supabase.table("seasons") \
         .update({
-            "draft_order": json.dumps(player_ids)
-        })
-        .eq("id", season_id)
+            "draft_order": ",".join(str(player_id) for player_id in player_ids),
+            "draft_status": "ready",
+        }) \
+        .eq("id", season_id) \
         .execute()
-    )
 
 
 def reset_draft_order(season_id: int) -> None:
