@@ -56,13 +56,24 @@ def get_draft_order(season_id):
     except:
         return None
 
-def save_draft_order(season_id, draft_order):
+ef save_draft_order(season_id, draft_order):
     """Speichert die ausgeloste Draft-Reihenfolge."""
     try:
         supabase.table("seasons").update({"draft_order": draft_order}).eq("id", season_id).execute()
         st.success("Draft-Reihenfolge gespeichert!")
     except Exception as e:
         st.error(f"Fehler beim Speichern: {str(e)}")
+
+# --- HAUPTBEREICH DER APP ---
+
+if draft_status == "waiting":
+    st.subheader("🎲 Draft-Reihenfolge auslosen")
+    if st.button("Reihenfolge auslosen"):
+        draft_order = list(range(1, len(players) + 1))
+        random.shuffle(draft_order)
+        save_draft_order(season_id, "".join(map(str, draft_order)))
+        update_draft_status(season_id, "drawing")
+        st.rerun()
 
 elif draft_status == "drawing":
     st.success("✅ Draft-Reihenfolge wurde ausgelost!")
@@ -86,6 +97,10 @@ elif draft_status == "drawing":
             st.rerun()
     else:
         st.info("⏳ Warte bis Choci den Team-Draft startet...")
+
+elif draft_status == "team_draft":
+    st.subheader("👥 Team-Draft")
+    st.write("Draft läuft...")
 
 def update_draft_status(season_id, status):
     """Updated Draft-Status."""
