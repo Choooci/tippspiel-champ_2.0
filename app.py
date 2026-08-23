@@ -16,7 +16,6 @@ from supabase import create_client, Client
 # KONFIGURATION
 # ============================================================
 
-PASSWORT = "040822"
 AKTUELLE_SAISON_NAME = "2026-27"
 AKTUELLE_SAISON_KEY = 5  # neuer Schlüssel für die neue Saison im Tippspiel
 DRAFT_SNAKE_ORDER = "1234432112344321"  # Reihenfolge für 16 Picks (4 Runden)
@@ -955,33 +954,3 @@ def show_app():
 
     st.markdown("<br><hr>", unsafe_allow_html=True)
     st.info("✅ Diese App ist open source und wird ständig weiterentwickelt. Feedback ist willkommen!")
-
-
-# ============================================================
-# AUTH + HAUPT-EINSTIEG
-# ============================================================
-
-def main():
-    """Einstiegspunkt mit Password-Schutz."""
-    if "authenticated" not in st.session_state:
-        st.session_state.authenticated = False
-
-    if not st.session_state.authenticated:
-        st.set_page_config(page_title="⚽ Bundesliga Tippspiel Champs", layout="centered")
-        st.title("🔒 Bundesliga Tippspiel")
-        st.write("Bitte melde dich an:")
-
-        password = st.text_input("Passwort:", type="password")
-
-        if st.button("🔓 Anmelden"):
-            if password == PASSWORT:
-                st.session_state.authenticated = True
-                st.rerun()
-            else:
-                st.error("❌ Falsches Passwort!")
-    else:
-        show_app()
-
-
-if __name__ == "__main__":
-    main()
