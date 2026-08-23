@@ -1,6 +1,5 @@
 import json
 import random
-from datetime import datetime
 from typing import Any
 
 import pandas as pd
@@ -21,24 +20,17 @@ st.set_page_config(
 
 SUPABASE_URL = st.secrets["supabase_url"]
 SUPABASE_KEY = st.secrets["supabase_key"]
-ADMIN_USER = st.secrets.get("admin_user", "admin")
+ADMIN_USER = st.secrets.get("admin_user", "Choci")
 
 AKTUELLE_SAISON = "2026-27"
 AKTUELLES_BUNDESLIGA_JAHR = 2026
 
-# Vier Personen, insgesamt 16 Picks
 ANZAHL_SPIELER = 4
 PICKS_PRO_SPIELER = 4
 ANZAHL_PICKS = ANZAHL_SPIELER * PICKS_PRO_SPIELER
 
-# Die eigentliche Reihenfolge der Personen wird später
-# zufällig durch die Auslosung bestimmt.
-#
-# Beispiel:
-# Auslosung: Person 3, Person 1, Person 4, Person 2
-#
-# Dann lautet die Pick-Reihenfolge:
-# 3 1 4 2 2 4 1 3 3 1 4 2 2 4 1 3
+# Gewünschte Reihenfolge:
+# 1 2 3 4 4 3 2 1 1 2 3 4 4 3 2 1
 SNAKE_REIHENFOLGE = [
     0, 1, 2, 3,
     3, 2, 1, 0,
@@ -46,7 +38,10 @@ SNAKE_REIHENFOLGE = [
     3, 2, 1, 0,
 ]
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+supabase: Client = create_client(
+    SUPABASE_URL,
+    SUPABASE_KEY,
+)
 
 
 # ============================================================
@@ -54,7 +49,7 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 # ============================================================
 
 def daten_oder_leere_liste(response: Any) -> list[dict]:
-    """Gibt die Daten einer Supabase-Antwort oder eine leere Liste zurück."""
+    """Gibt die Daten einer Supabase-Antwort als Liste zurück."""
     if response is None or not response.data:
         return []
 
@@ -64,39 +59,52 @@ def daten_oder_leere_liste(response: Any) -> list[dict]:
     return [response.data]
 
 
-def spieler_name(players: list[dict], player_id: int | None) -> str:
-    """Ermittelt den Spielernamen anhand der ID."""
+def spieler_name(
+    players: list[dict],
+    player_id: int | None,
+) -> str:
+    """Ermittelt den Namen eines Spielers anhand seiner ID."""
     player = next(
-        (player for player in players if player["id"] == player_id),
+        (
+            item
+            for item in players
+            if item.get("id") == player_id
+        ),
         None,
     )
-    return player["name"] if player else "Unbekannt"
+
+    return player.get("name", "Unbekannt") if player else "Unbekannt"
 
 
-def team_name(teams: list[dict], team_id: int | None) -> str:
-    """Ermittelt den Teamnamen anhand der ID."""
+def team_name(
+    teams: list[dict],
+    team_id: int | None,
+) -> str:
+    """Ermittelt den Teamnamen anhand seiner ID."""
     team = next(
-        (team for team in teams if team["id"] == team_id),
+        (
+            item
+            for item in teams
+            if item.get("id") == team_id
+        ),
         None,
     )
-    return team["team_name"] if team else "Unbekannt"
+
+    return team.get("team_name", "Unbekannt") if team else "Unbekannt"
 
 
-def erstelle_snake_reihenfolge(auslosung: list[int]) -> list[int]:
-    """
-    Erstellt aus der ausgelosten Sitzreihenfolge
-    die endgültige Reihenfolge mit 16 Picks.
+def auslosung_zu_draft_order(
+    sitzreihenfolge: list[int],
+) -> list[int]:
+    """Erstellt aus vier Spielern die vollständige Reihenfolge."""
+    if len(sitzreihenfolge) != ANZAHL_SPIELER:
+        raise ValueError(
+            f"Es werden genau {ANZAHL_SPIELER} Spieler benötigt."
+        )
 
-    Beispiel:
-    auslosung = [3, 1, 4, 2]
-
-    Ergebnis:
-    [3, 1, 4, 2, 2, 4, 1, 3,
-     3, 1, 4, 2, 2, 4, 1, 3]
-    """
     return [
-        auslosung[position]
-        for position in SNAKE_REIHENFOLGE
+        sitzreihenfolge[index]
+        for index in SNAKE_REIHENFOLGE
     ]
 
 
@@ -104,18 +112,38 @@ def erstelle_snake_reihenfolge(auslosung: list[int]) -> list[int]:
 # SUPABASE: SAISON
 # ============================================================
 
-def get_or_create_season(season_name: str) -> dict:
-    """Holt eine Saison oder legt sie neu an."""
+def get_or_create_season(
+    season_name: str,
+) -> dict:
+    """Lädt eine Saison oder legt sie an."""
     response = (
         supabase
         .table("seasons")
         .select("*")
         .eq("name", season_name)
+        .limit(1)
         .execute()
     )
 
     if response.data:
-        return response.data[0]
+        season = response.data[0]
+
+        # Fehlende Statuswerte nachträglich korrigieren
+        if not season.get("draft_status"):
+            (
+                supabase
+                .table("seasons")
+                .update({
+                    "draft_status": "waiting",
+                    "is_active": True,
+                })
+                .eq("id", season["id"])
+                .execute()
+            )
+
+            season["draft_status"] = "waiting"
+
+        return season
 
     response = (
         supabase
@@ -130,34 +158,44 @@ def get_or_create_season(season_name: str) -> dict:
     )
 
     if not response.data:
-        raise RuntimeError("Die Saison konnte nicht angelegt werden.")
+        raise RuntimeError(
+            "Die Saison konnte nicht angelegt werden."
+        )
 
     return response.data[0]
 
 
 def get_draft_status(season_id: int) -> str:
-    """Lädt den aktuellen Status der Saison."""
+    """Lädt den aktuellen Draftstatus."""
     response = (
         supabase
         .table("seasons")
         .select("draft_status")
         .eq("id", season_id)
-        .single()
+        .limit(1)
         .execute()
     )
 
     if response.data:
-        return response.data.get("draft_status") or "waiting"
+        return response.data[0].get(
+            "draft_status",
+            "waiting",
+        )
 
     return "waiting"
 
 
-def update_draft_status(season_id: int, status: str) -> None:
+def update_draft_status(
+    season_id: int,
+    status: str,
+) -> None:
     """Aktualisiert den Draftstatus."""
     (
         supabase
         .table("seasons")
-        .update({"draft_status": status})
+        .update({
+            "draft_status": status,
+        })
         .eq("id", season_id)
         .execute()
     )
@@ -184,8 +222,10 @@ def get_players() -> list[dict]:
 # SUPABASE: TEAMS
 # ============================================================
 
-def get_teams_for_season(season_id: int) -> list[dict]:
-    """Lädt die Teams der ausgewählten Saison."""
+def get_teams_for_season(
+    season_id: int,
+) -> list[dict]:
+    """Lädt alle Teams der aktuellen Saison."""
     response = (
         supabase
         .table("teams")
@@ -202,13 +242,10 @@ def get_teams_for_season(season_id: int) -> list[dict]:
 # SUPABASE: DRAFT-REIHENFOLGE
 # ============================================================
 
-def get_draft_order(season_id: int) -> list[dict]:
-    """
-    Lädt die vollständige Draft-Reihenfolge aus der Tabelle draft_order.
-
-    position = 1 bis 16
-    player_id = Spieler, der an dieser Position zieht
-    """
+def get_draft_order(
+    season_id: int,
+) -> list[dict]:
+    """Lädt die Draftreihenfolge."""
     response = (
         supabase
         .table("draft_order")
@@ -223,33 +260,26 @@ def get_draft_order(season_id: int) -> list[dict]:
 
 def save_draft_order(
     season_id: int,
-    player_ids: list[int],
+    sitzreihenfolge: list[int],
 ) -> None:
     """
-    Speichert immer die vollständige Draft-Reihenfolge mit 16 Picks.
-
-    Übergabe möglich:
-    - 4 Spieler der Auslosung
-    - oder bereits 16 vollständige Draftpositionen
+    Speichert die Auslosung und erzeugt daraus 16 Picks.
     """
 
-    if len(player_ids) == ANZAHL_SPIELER:
-        # Aus 4 Sitzpositionen die 16 Picks erzeugen
-        complete_order_ids = [
-            player_ids[position]
-            for position in SNAKE_REIHENFOLGE
-        ]
-
-    elif len(player_ids) == ANZAHL_PICKS:
-        # Bereits vollständige Reihenfolge
-        complete_order_ids = player_ids
-
-    else:
+    if len(sitzreihenfolge) != ANZAHL_SPIELER:
         raise ValueError(
-            f"Es werden entweder {ANZAHL_SPIELER} oder "
-            f"{ANZAHL_PICKS} Spieler benötigt. "
-            f"Erhalten: {len(player_ids)}"
+            f"Es müssen genau {ANZAHL_SPIELER} Spieler "
+            f"ausgelost werden."
         )
+
+    if len(set(sitzreihenfolge)) != ANZAHL_SPIELER:
+        raise ValueError(
+            "Jeder Spieler darf nur einmal ausgelost werden."
+        )
+
+    komplette_reihenfolge = auslosung_zu_draft_order(
+        sitzreihenfolge
+    )
 
     # Alte Reihenfolge löschen
     (
@@ -260,7 +290,7 @@ def save_draft_order(
         .execute()
     )
 
-    # Die vollständigen 16 Draftpositionen speichern
+    # Neue Reihenfolge speichern
     rows = [
         {
             "season_id": season_id,
@@ -268,24 +298,29 @@ def save_draft_order(
             "position": position,
         }
         for position, player_id in enumerate(
-            complete_order_ids,
+            komplette_reihenfolge,
             start=1,
         )
     ]
 
-    (
+    response = (
         supabase
         .table("draft_order")
         .insert(rows)
         .execute()
     )
 
-    # Saisonstatus aktualisieren
+    if not response.data:
+        raise RuntimeError(
+            "Die Draftreihenfolge konnte nicht gespeichert werden."
+        )
+
+    # Nur die vier Sitzplätze in seasons speichern
     (
         supabase
         .table("seasons")
         .update({
-            "draft_order": json.dumps(complete_order_ids),
+            "draft_order": json.dumps(sitzreihenfolge),
             "draft_status": "drawing",
         })
         .eq("id", season_id)
@@ -293,8 +328,10 @@ def save_draft_order(
     )
 
 
-def reset_draft_order(season_id: int) -> None:
-    """Löscht die gespeicherte Auslosung."""
+def reset_draft_order(
+    season_id: int,
+) -> None:
+    """Löscht die Draftreihenfolge."""
     (
         supabase
         .table("draft_order")
@@ -319,8 +356,10 @@ def reset_draft_order(season_id: int) -> None:
 # SUPABASE: PICKS
 # ============================================================
 
-def get_draft_picks(season_id: int) -> list[dict]:
-    """Lädt alle Picks in der korrekten Reihenfolge."""
+def get_draft_picks(
+    season_id: int,
+) -> list[dict]:
+    """Lädt alle bereits gespeicherten Picks."""
     response = (
         supabase
         .table("draft_picks")
@@ -339,44 +378,63 @@ def save_draft_pick(
     team_id: int,
     pick_order: int,
 ) -> None:
-    """
-    Speichert einen Draftpick in draft_picks
-    und zusätzlich in player_picks.
-    """
-    draft_pick = {
+    """Speichert einen Pick."""
+    if pick_order < 1 or pick_order > ANZAHL_PICKS:
+        raise ValueError("Ungültige Picknummer.")
+
+    vorhandene_picks = get_draft_picks(season_id)
+
+    if any(
+        pick["pick_order"] == pick_order
+        for pick in vorhandene_picks
+    ):
+        raise ValueError(
+            "Dieser Pick wurde bereits gespeichert."
+        )
+
+    if any(
+        pick["team_id"] == team_id
+        for pick in vorhandene_picks
+    ):
+        raise ValueError(
+            "Dieses Team wurde bereits gepickt."
+        )
+
+    pick = {
         "season_id": season_id,
         "player_id": player_id,
         "team_id": team_id,
         "pick_order": pick_order,
     }
 
-    (
+    response = (
         supabase
         .table("draft_picks")
-        .insert(draft_pick)
+        .insert(pick)
         .execute()
     )
 
-    player_pick = {
-        "season_id": season_id,
-        "player_id": player_id,
-        "team_id": team_id,
-        "pick_order": pick_order,
-    }
+    if not response.data:
+        raise RuntimeError(
+            "Der Draftpick konnte nicht gespeichert werden."
+        )
 
+    # Speicherung für spätere Auswertungen
     (
         supabase
         .table("player_picks")
         .upsert(
-            player_pick,
+            pick,
             on_conflict="season_id,player_id,team_id",
         )
         .execute()
     )
 
 
-def delete_all_draft_picks(season_id: int) -> None:
-    """Löscht alle Picks einer Saison."""
+def delete_all_draft_picks(
+    season_id: int,
+) -> None:
+    """Löscht alle Picks der Saison."""
     (
         supabase
         .table("draft_picks")
@@ -398,23 +456,30 @@ def delete_all_draft_picks(season_id: int) -> None:
 # OPENLIGADB
 # ============================================================
 
-def get_bundesliga_table(season_year: int) -> list[dict]:
-    """
-    Lädt die Bundesliga-Tabelle von OpenLigaDB.
-
-    Für die laufende Saison kann es am Anfang der Saison
-    noch wenige oder keine Daten geben.
-    """
+def get_bundesliga_table(
+    season_year: int,
+) -> list[dict]:
+    """Lädt die Bundesliga-Tabelle."""
     url = (
         "https://www.openligadb.de/api/"
         f"getbltable/bl1/{season_year}"
     )
 
     try:
-        response = requests.get(url, timeout=10)
+        response = requests.get(
+            url,
+            timeout=10,
+        )
         response.raise_for_status()
-        return response.json()
-    except requests.RequestException:
+
+        data = response.json()
+
+        return data if isinstance(data, list) else []
+
+    except (
+        requests.RequestException,
+        ValueError,
+    ):
         return []
 
 
@@ -422,22 +487,37 @@ def get_bundesliga_table(season_year: int) -> list[dict]:
 # AUSWERTUNG
 # ============================================================
 
+def teamdaten_aus_api(
+    team_display_name: str,
+    table_data: list[dict],
+) -> tuple[int, int]:
+    """Findet Punkte und Spiele eines Teams."""
+    suchname = team_display_name.lower().strip()
+
+    for row in table_data:
+        api_name = str(
+            row.get("teamName", "")
+        ).lower().strip()
+
+        if (
+            suchname in api_name
+            or api_name in suchname
+        ):
+            return (
+                int(row.get("points", 0)),
+                int(row.get("matches", 0)),
+            )
+
+    return 0, 0
+
+
 def berechne_punkte(
     picks: list[dict],
     players: list[dict],
+    teams: list[dict],
     table_data: list[dict],
 ) -> tuple[pd.DataFrame, dict]:
-    """
-    Berechnet die Gesamtpunkte pro Spieler
-    und die Punkte der einzelnen Teams.
-    """
-    punkte_pro_team = {}
-
-    for row in table_data:
-        original_name = row.get("teamName", "")
-        points = int(row.get("points", 0))
-        punkte_pro_team[original_name.lower()] = points
-
+    """Berechnet die Punkte pro Spieler."""
     ergebnisse = {}
 
     for player in players:
@@ -450,16 +530,16 @@ def berechne_punkte(
             if pick["player_id"] == player_id
         ]
 
-        einzelteams = []
+        team_ergebnisse = []
         gesamtpunkte = 0
         gesamtspiele = 0
 
         for pick in eigene_picks:
             team = next(
                 (
-                    team
-                    for team in st.session_state.current_teams
-                    if team["id"] == pick["team_id"]
+                    item
+                    for item in teams
+                    if item["id"] == pick["team_id"]
                 ),
                 None,
             )
@@ -468,41 +548,25 @@ def berechne_punkte(
                 continue
 
             team_display_name = team["team_name"]
-            team_points = 0
-            team_matches = 0
 
-            # OpenLigaDB-Namen möglichst tolerant vergleichen
-            for api_team_name, points in punkte_pro_team.items():
-                if (
-                    team_display_name.lower() in api_team_name
-                    or api_team_name in team_display_name.lower()
-                ):
-                    team_points = points
-                    break
+            punkte, spiele = teamdaten_aus_api(
+                team_display_name,
+                table_data,
+            )
 
-            for row in table_data:
-                api_name = row.get("teamName", "").lower()
+            gesamtpunkte += punkte
+            gesamtspiele += spiele
 
-                if (
-                    team_display_name.lower() in api_name
-                    or api_name in team_display_name.lower()
-                ):
-                    team_matches = int(row.get("matches", 0))
-                    break
-
-            gesamtpunkte += team_points
-            gesamtspiele += team_matches
-
-            einzelteams.append({
+            team_ergebnisse.append({
                 "Team": team_display_name,
-                "Punkte": team_points,
-                "Spiele": team_matches,
+                "Punkte": punkte,
+                "Spiele": spiele,
             })
 
         ergebnisse[name] = {
             "Punkte": gesamtpunkte,
             "Spiele": gesamtspiele,
-            "Teams": einzelteams,
+            "Teams": team_ergebnisse,
         }
 
     rangliste = pd.DataFrame([
@@ -515,10 +579,14 @@ def berechne_punkte(
     ])
 
     if not rangliste.empty:
-        rangliste = rangliste.sort_values(
-            by=["Punkte", "Spiele"],
-            ascending=[False, False],
-        ).reset_index(drop=True)
+        rangliste = (
+            rangliste
+            .sort_values(
+                by=["Punkte", "Spiele"],
+                ascending=[False, False],
+            )
+            .reset_index(drop=True)
+        )
 
         rangliste.insert(
             0,
@@ -538,18 +606,19 @@ def zeige_draft_reihenfolge(
     players: list[dict],
     current_pick: int,
 ) -> None:
-    """Zeigt alle 16 Picks inklusive Status."""
+    """Zeigt die 16 Draftpositionen."""
     st.subheader("🎲 Draft-Reihenfolge")
 
     if not draft_order:
-        st.info("Die Draft-Reihenfolge wurde noch nicht ausgelost.")
+        st.info(
+            "Die Draftreihenfolge wurde noch nicht ausgelost."
+        )
         return
 
     rows = []
 
     for row in draft_order:
         position = row["position"]
-        name = spieler_name(players, row["player_id"])
 
         if position < current_pick:
             status = "✅ erledigt"
@@ -560,7 +629,10 @@ def zeige_draft_reihenfolge(
 
         rows.append({
             "Pick": position,
-            "Spieler": name,
+            "Spieler": spieler_name(
+                players,
+                row["player_id"],
+            ),
             "Status": status,
         })
 
@@ -576,8 +648,8 @@ def zeige_finale_picks(
     players: list[dict],
     teams: list[dict],
 ) -> None:
-    """Zeigt die finalen Teams pro Spieler."""
-    st.subheader("🏆 Finale Teamverteilung")
+    """Zeigt die Teams pro Spieler."""
+    st.subheader("🏆 Teamverteilung")
 
     for player in players:
         eigene_picks = [
@@ -591,111 +663,150 @@ def zeige_finale_picks(
 
         st.markdown(f"### {player['name']}")
 
-        team_rows = []
+        rows = []
 
         for pick in eigene_picks:
             team = next(
                 (
-                    team
-                    for team in teams
-                    if team["id"] == pick["team_id"]
+                    item
+                    for item in teams
+                    if item["id"] == pick["team_id"]
                 ),
                 None,
             )
 
             if team:
-                team_rows.append({
+                rows.append({
                     "Pick": pick["pick_order"],
                     "Team": team["team_name"],
-                    "Logo": team.get("logo_url", ""),
                 })
 
-        st.dataframe(
-            pd.DataFrame(team_rows),
-            use_container_width=True,
-            hide_index=True,
-        )
+        if rows:
+            st.dataframe(
+                pd.DataFrame(rows),
+                use_container_width=True,
+                hide_index=True,
+            )
 
 
-def zeige_verfuegbare_teams(teams: list[dict], picks: list[dict]) -> None:
-    """Zeigt alle noch verfügbaren Teams."""
+def zeige_verfuegbare_teams(
+    teams: list[dict],
+    picks: list[dict],
+) -> None:
+    """Zeigt noch verfügbare Teams."""
     gepickte_team_ids = {
         pick["team_id"]
         for pick in picks
     }
 
-    available_teams = [
+    verfuegbare_teams = [
         team
         for team in teams
         if team["id"] not in gepickte_team_ids
     ]
 
     st.subheader(
-        f"⚽ Verfügbare Teams ({len(available_teams)})"
+        f"⚽ Verfügbare Teams "
+        f"({len(verfuegbare_teams)})"
     )
+
+    if not verfuegbare_teams:
+        st.info("Keine Teams mehr verfügbar.")
+        return
 
     columns = st.columns(6)
 
-    for index, team in enumerate(available_teams):
+    for index, team in enumerate(verfuegbare_teams):
         with columns[index % 6]:
             logo_url = team.get("logo_url")
 
-            if logo_url and logo_url.startswith("http"):
-                st.image(logo_url, width=60)
+            if (
+                logo_url
+                and str(logo_url).startswith("http")
+            ):
+                st.image(
+                    logo_url,
+                    width=60,
+                )
 
             st.caption(team["team_name"])
 
 
 # ============================================================
-# APP
+# APP-START
 # ============================================================
 
 st.title("⚽ Bundesliga Tippspiel")
 
 try:
-    season = get_or_create_season(AKTUELLE_SAISON)
+    season = get_or_create_season(
+        AKTUELLE_SAISON
+    )
+
+    season_id = season["id"]
+    players = get_players()
+    teams = get_teams_for_season(season_id)
+    draft_status = get_draft_status(season_id)
+
 except Exception as error:
-    st.error(f"Die Saison konnte nicht geladen werden: {error}")
+    st.error(
+        f"Die Daten konnten nicht geladen werden: {error}"
+    )
     st.stop()
 
-season_id = season["id"]
-
-players = get_players()
-teams = get_teams_for_season(season_id)
-draft_status = get_draft_status(season_id)
-
-# Für die Auswertungsfunktion verfügbar machen
-st.session_state.current_teams = teams
 
 if len(players) != ANZAHL_SPIELER:
     st.warning(
-        f"Es müssen genau {ANZAHL_SPIELER} Spieler vorhanden sein. "
-        f"Aktuell gefunden: {len(players)}."
+        f"Es müssen genau {ANZAHL_SPIELER} Spieler "
+        f"vorhanden sein. Gefunden: {len(players)}."
     )
 
 if not players:
-    st.error("Keine Spieler in Supabase gefunden.")
+    st.error(
+        "Keine Spieler in Supabase gefunden."
+    )
     st.stop()
+
+
+# ============================================================
+# PROFILAUSWAHL
+# ============================================================
 
 st.sidebar.header("👤 Profil")
 
-player_names = [player["name"] for player in players]
+player_names = [
+    player["name"]
+    for player in players
+]
+
+if ADMIN_USER not in player_names:
+    player_names.append(ADMIN_USER)
 
 current_player_name = st.sidebar.selectbox(
     "Wer bist Du?",
     player_names,
 )
 
-is_admin = current_player_name == ADMIN_USER
+is_admin = (
+    current_player_name == ADMIN_USER
+)
 
 if is_admin:
-    st.sidebar.success("✅ Adminmodus aktiv")
+    st.sidebar.success(
+        "✅ Adminmodus aktiv"
+    )
 else:
-    st.sidebar.info(f"👀 Angemeldet als {current_player_name}")
+    st.sidebar.info(
+        f"👀 Angemeldet als {current_player_name}"
+    )
 
 st.sidebar.divider()
-st.sidebar.write(f"**Saison:** {AKTUELLE_SAISON}")
-st.sidebar.write(f"**Draftstatus:** `{draft_status}`")
+st.sidebar.write(
+    f"**Saison:** {AKTUELLE_SAISON}"
+)
+st.sidebar.write(
+    f"**Draftstatus:** `{draft_status}`"
+)
 
 tab_draft, tab_overview, tab_admin = st.tabs([
     "🎲 Draft",
@@ -718,8 +829,8 @@ with tab_draft:
         st.subheader("🎲 Auslosung")
 
         st.info(
-            "Zuerst wird ausgelost, wer auf Position 1 bis 4 sitzt. "
-            "Danach beginnt der Team-Draft."
+            "Zuerst wird ausgelost, wer auf Position 1 bis 4 "
+            "sitzt. Danach beginnt der Team-Draft."
         )
 
         if is_admin:
@@ -730,34 +841,27 @@ with tab_draft:
                 try:
                     shuffled_players = players.copy()
                     random.shuffle(shuffled_players)
-            
-                    seat_order_ids = [
+
+                    sitzreihenfolge = [
                         player["id"]
                         for player in shuffled_players
                     ]
-            
-                    if len(seat_order_ids) != ANZAHL_SPIELER:
-                        st.error(
-                            f"Es müssen genau {ANZAHL_SPIELER} Spieler "
-                            f"vorhanden sein."
-                        )
-                        st.stop()
-            
+
                     save_draft_order(
                         season_id,
-                        seat_order_ids,
+                        sitzreihenfolge,
                     )
-            
+
                     st.success(
-                        "Die Draft-Reihenfolge wurde erfolgreich ausgelost."
+                        "Die Draftreihenfolge wurde ausgelost."
                     )
-            
                     st.rerun()
 
-    except Exception as error:
-        st.error(
-            f"Die Auslosung konnte nicht gespeichert werden: {error}"
-        )
+                except Exception as error:
+                    st.error(
+                        "Die Auslosung konnte nicht gespeichert "
+                        f"werden: {error}"
+                    )
         else:
             st.info(
                 "Warte, bis der Admin die Sitzreihenfolge auslost."
@@ -774,19 +878,25 @@ with tab_draft:
 
         if is_admin:
             st.warning(
-                "Bitte überprüfe die Reihenfolge. "
-                "Danach kannst Du den Team-Draft starten."
+                "Überprüfe die Reihenfolge und starte anschließend "
+                "den Team-Draft."
             )
 
             if st.button(
                 "➡️ Team-Draft starten",
                 type="primary",
             ):
-                update_draft_status(
-                    season_id,
-                    "team_draft",
-                )
-                st.rerun()
+                try:
+                    update_draft_status(
+                        season_id,
+                        "team_draft",
+                    )
+                    st.rerun()
+
+                except Exception as error:
+                    st.error(
+                        f"Der Draft konnte nicht gestartet werden: {error}"
+                    )
         else:
             st.info(
                 "Warte, bis der Admin den Team-Draft startet."
@@ -796,7 +906,9 @@ with tab_draft:
         st.subheader("🏆 Team-Draft")
 
         if not draft_order:
-            st.error("Keine Draft-Reihenfolge vorhanden.")
+            st.error(
+                "Keine Draftreihenfolge vorhanden."
+            )
             st.stop()
 
         zeige_draft_reihenfolge(
@@ -816,7 +928,9 @@ with tab_draft:
             )
 
             if not current_order_row:
-                st.error("Die aktuelle Draftposition wurde nicht gefunden.")
+                st.error(
+                    "Die aktuelle Draftposition wurde nicht gefunden."
+                )
                 st.stop()
 
             current_player_id = current_order_row["player_id"]
@@ -826,38 +940,46 @@ with tab_draft:
             )
 
             st.divider()
+
             st.info(
                 f"🎯 **Pick {current_pick_number}: "
                 f"{current_player} ist an der Reihe.**"
             )
 
-            zeige_verfuegbare_teams(teams, draft_picks)
+            zeige_verfuegbare_teams(
+                teams,
+                draft_picks,
+            )
 
             if current_player_name == current_player:
-                already_picked_ids = {
+                gepickte_team_ids = {
                     pick["team_id"]
                     for pick in draft_picks
                 }
 
-                available_teams = [
+                verfuegbare_teams = [
                     team
                     for team in teams
-                    if team["id"] not in already_picked_ids
+                    if team["id"] not in gepickte_team_ids
                 ]
 
-                if not available_teams:
-                    st.error("Keine verfügbaren Teams mehr vorhanden.")
+                if not verfuegbare_teams:
+                    st.error(
+                        "Keine verfügbaren Teams mehr vorhanden."
+                    )
                 else:
                     team_options = {
                         team["id"]: team["team_name"]
-                        for team in available_teams
+                        for team in verfuegbare_teams
                     }
 
                     selected_team_id = st.selectbox(
                         "Wähle Dein Team:",
                         options=list(team_options.keys()),
-                        format_func=lambda team_id: team_options[team_id],
-                        key=f"team_select_{current_pick_number}",
+                        format_func=lambda team_id: (
+                            team_options[team_id]
+                        ),
+                        key=f"team_{current_pick_number}",
                     )
 
                     if st.button(
@@ -872,38 +994,33 @@ with tab_draft:
                                 pick_order=current_pick_number,
                             )
 
-                            st.success(
-                                f"{current_player} hat "
-                                f"{team_options[selected_team_id]} gepickt."
-                            )
-
                             if current_pick_number == ANZAHL_PICKS:
                                 update_draft_status(
                                     season_id,
                                     "completed",
                                 )
 
+                            st.success(
+                                f"{current_player} hat "
+                                f"{team_options[selected_team_id]} "
+                                "gepickt."
+                            )
                             st.rerun()
 
                         except Exception as error:
                             st.error(
-                                f"Der Pick konnte nicht gespeichert werden: "
-                                f"{error}"
+                                f"Der Pick konnte nicht gespeichert "
+                                f"werden: {error}"
                             )
             else:
                 st.info(
                     f"Warte auf {current_player}."
                 )
-        else:
-            update_draft_status(
-                season_id,
-                "completed",
-            )
-            st.success("🎉 Alle 16 Teams wurden gepickt.")
-            st.rerun()
 
     elif draft_status == "completed":
-        st.success("✅ Der Draft ist abgeschlossen.")
+        st.success(
+            "✅ Der Draft ist abgeschlossen."
+        )
 
         zeige_finale_picks(
             draft_picks,
@@ -917,21 +1034,27 @@ with tab_draft:
 # ============================================================
 
 with tab_overview:
-    st.subheader(f"📊 Bundesliga-Tabelle {AKTUELLE_SAISON}")
+    st.subheader(
+        f"📊 Bundesliga-Tabelle {AKTUELLE_SAISON}"
+    )
 
     table_data = get_bundesliga_table(
-        AKTUELLES_BUNDESLIGA_JAHR,
+        AKTUELLES_BUNDESLIGA_JAHR
     )
 
     if table_data:
         bundesliga_rows = []
 
-        for index, row in enumerate(
-            sorted(
-                table_data,
-                key=lambda item: item.get("points", 0),
-                reverse=True,
+        sortierte_tabelle = sorted(
+            table_data,
+            key=lambda item: int(
+                item.get("points", 0)
             ),
+            reverse=True,
+        )
+
+        for index, row in enumerate(
+            sortierte_tabelle,
             start=1,
         ):
             bundesliga_rows.append({
@@ -957,6 +1080,7 @@ with tab_overview:
         rangliste, einzel_ergebnisse = berechne_punkte(
             draft_picks,
             players,
+            teams,
             table_data,
         )
 
@@ -965,7 +1089,7 @@ with tab_overview:
 
         if rangliste.empty:
             st.info(
-                "Noch keine Picks oder noch keine Tabellendaten vorhanden."
+                "Noch keine Picks vorhanden."
             )
         else:
             st.dataframe(
@@ -975,11 +1099,14 @@ with tab_overview:
             )
 
             st.divider()
-            st.subheader("📋 Punkte der Einzelteams")
+            st.subheader(
+                "📋 Punkte der Einzelteams"
+            )
 
             for name, result in einzel_ergebnisse.items():
                 st.markdown(
-                    f"### {name} – {result['Punkte']} Punkte"
+                    f"### {name} – "
+                    f"{result['Punkte']} Punkte"
                 )
 
                 if result["Teams"]:
@@ -989,12 +1116,14 @@ with tab_overview:
                         hide_index=True,
                     )
                 else:
-                    st.info("Noch keine Teams vorhanden.")
+                    st.info(
+                        "Noch keine Teams vorhanden."
+                    )
 
     else:
         st.warning(
-            "Die Bundesliga-Tabelle konnte aktuell nicht geladen werden. "
-            "Zu Saisonbeginn kann OpenLigaDB noch keine Spiele enthalten."
+            "Die Bundesliga-Tabelle konnte aktuell nicht "
+            "geladen werden."
         )
 
     st.divider()
@@ -1007,7 +1136,9 @@ with tab_overview:
             teams,
         )
     else:
-        st.info("Es wurden noch keine Teams gepickt.")
+        st.info(
+            "Es wurden noch keine Teams gepickt."
+        )
 
 
 # ============================================================
@@ -1019,6 +1150,7 @@ with tab_admin:
         st.error(
             "Dieser Bereich ist nur für den Admin sichtbar."
         )
+
     else:
         st.subheader("⚙️ Adminbereich")
 
@@ -1027,7 +1159,9 @@ with tab_admin:
         )
 
         st.divider()
-        st.markdown("### 🔄 Draft zurücksetzen")
+        st.markdown(
+            "### 🔄 Draft zurücksetzen"
+        )
 
         st.warning(
             "Dabei werden die Auslosung und alle Picks "
@@ -1049,12 +1183,14 @@ with tab_admin:
 
             except Exception as error:
                 st.error(
-                    f"Der Draft konnte nicht zurückgesetzt werden: "
-                    f"{error}"
+                    "Der Draft konnte nicht zurückgesetzt "
+                    f"werden: {error}"
                 )
 
         st.divider()
-        st.markdown("### ⚠️ Manuellen Status setzen")
+        st.markdown(
+            "### ⚠️ Manuellen Status setzen"
+        )
 
         status_options = [
             "waiting",
@@ -1063,21 +1199,36 @@ with tab_admin:
             "completed",
         ]
 
+        status_index = (
+            status_options.index(draft_status)
+            if draft_status in status_options
+            else 0
+        )
+
         selected_status = st.selectbox(
             "Neuer Status:",
             status_options,
-            index=status_options.index(draft_status)
-            if draft_status in status_options
-            else 0,
+            index=status_index,
         )
 
-        if st.button("Status speichern"):
-            update_draft_status(
-                season_id,
-                selected_status,
-            )
-            st.success("Status gespeichert.")
-            st.rerun()
+        if st.button(
+            "Status speichern"
+        ):
+            try:
+                update_draft_status(
+                    season_id,
+                    selected_status,
+                )
+
+                st.success(
+                    "Status wurde gespeichert."
+                )
+                st.rerun()
+
+            except Exception as error:
+                st.error(
+                    f"Status konnte nicht gespeichert werden: {error}"
+                )
 
         st.divider()
         st.markdown("### 👥 Spieler")
@@ -1089,7 +1240,9 @@ with tab_admin:
         )
 
         st.divider()
-        st.markdown("### ⚽ Teams dieser Saison")
+        st.markdown(
+            "### ⚽ Teams dieser Saison"
+        )
 
         if teams:
             st.dataframe(
@@ -1099,5 +1252,6 @@ with tab_admin:
             )
         else:
             st.warning(
-                "Für diese Saison wurden noch keine Teams hinterlegt."
+                "Für diese Saison wurden noch keine Teams "
+                "hinterlegt."
             )
