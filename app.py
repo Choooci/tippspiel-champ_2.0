@@ -7,12 +7,13 @@ from datetime import datetime
 # --- KONFIGURATION ---
 SUPABASE_URL = st.secrets["supabase_url"]
 SUPABASE_KEY = st.secrets["supabase_key"]
-AKTUELLE_SAISON = "2026/2027"
+AKTUELLE_SAISON = "2024/2025"
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # --- DATENBANKFUNKTIONEN ---
 
+@st.cache_data(ttl=5)
 def get_or_create_season(season_name):
     """Holt oder erstellt eine Saison."""
     try:
@@ -22,7 +23,6 @@ def get_or_create_season(season_name):
     except:
         pass
     
-    # Erstelle neue Saison
     new_season = {
         "name": season_name,
         "is_active": True,
@@ -30,8 +30,8 @@ def get_or_create_season(season_name):
     }
     result = supabase.table("seasons").insert(new_season).execute()
     return result.data[0] if result.data else new_season
-    
 
+@st.cache_data(ttl=5)
 def get_players():
     """Holt alle Spieler aus der DB."""
     try:
@@ -40,6 +40,7 @@ def get_players():
     except:
         return []
 
+@st.cache_data(ttl=5)
 def get_teams_for_season(season_id):
     """Holt alle Teams einer Saison."""
     try:
@@ -48,6 +49,7 @@ def get_teams_for_season(season_id):
     except:
         return []
 
+@st.cache_data(ttl=5)
 def get_draft_status(season_id):
     """Holt den Draft-Status einer Saison."""
     try:
@@ -56,24 +58,31 @@ def get_draft_status(season_id):
             return result.data.get("draft_status", "waiting")
         return "waiting"
     except Exception as e:
-        st.error(f"Fehler beim Laden des Draft-Status: {str(e)}")
         return "waiting"
 
+@st.cache_data(ttl=5)
 def get_draft_order(season_id):
     """Holt die ausgeloste Draft-Reihenfolge."""
     try:
         result = supabase.table("seasons").select("draft_order").eq("id", season_id).single().execute()
         if result.data and result.data.get("draft_order"):
             draft_order_str = result.data.get("draft_order")
-            # Versuche JSON zu parsen
             try:
                 return json.loads(draft_order_str)
             except:
-                # Fallback für alte String-Formatierung
                 return [int(d) for d in draft_order_str]
         return None
     except:
         return None
+
+@st.cache_data(ttl=5)
+def get_draft_picks(season_id):
+    """Holt alle Draft-Picks einer Saison."""
+    try:
+        result = supabase.table("draft_picks").select("*").eq("season_id", season_id).order("pick_order").execute()
+        return result.data if result.data else []
+    except:
+        return []
 
 def save_draft_order(season_id, draft_order):
     """Speichert die Draft-Reihenfolge als JSON."""
@@ -81,6 +90,7 @@ def save_draft_order(season_id, draft_order):
         supabase.table("seasons").update({
             "draft_order": json.dumps(draft_order)
         }).eq("id", season_id).execute()
+        st.cache_data.clear()
     except Exception as e:
         st.error(f"Fehler beim Speichern der Draft-Reihenfolge: {str(e)}")
 
@@ -90,20 +100,13 @@ def update_draft_status(season_id, status):
         supabase.table("seasons").update({
             "draft_status": status
         }).eq("id", season_id).execute()
+        st.cache_data.clear()
     except Exception as e:
         st.error(f"Fehler beim Aktualisieren des Draft-Status: {str(e)}")
 
 def complete_draft(season_id):
     """Markiert den Draft als abgeschlossen."""
     update_draft_status(season_id, "completed")
-
-def get_draft_picks(season_id):
-    """Holt alle Draft-Picks einer Saison."""
-    try:
-        result = supabase.table("draft_picks").select("*").eq("season_id", season_id).order("pick_order").execute()
-        return result.data if result.data else []
-    except:
-        return []
 
 def save_draft_pick(season_id, player_id, team_id, pick_order):
     """Speichert einen Draft-Pick."""
@@ -116,13 +119,9 @@ def save_draft_pick(season_id, player_id, team_id, pick_order):
             "created_at": datetime.now().isoformat()
         }
         supabase.table("draft_picks").insert(pick).execute()
+        st.cache_data.clear()
     except Exception as e:
         st.error(f"Fehler beim Speichern des Draft-Picks: {str(e)}")
-
-def get_bundesliga_table():
-    """Holt die aktuelle Bundesliga-Tabelle."""
-    # Placeholder – hier könnte eine API-Integration folgen
-    return None
 
 # --- HAUPTAPP ---
 
@@ -249,7 +248,7 @@ elif draft_status == "team_draft":
             if not all_teams:
                 st.warning("⚠️ Keine Teams in der Datenbank! Bitte zuerst Teams hinzufügen (Admin-Bereich).")
             elif available_teams:
-                team_options = {t["id"]: f"{t['logo']} {t['name']}" for t in available_teams}
+                team_options = {t["id"]: f"{t['logo_url']} {t['team_name']}" for t in available_teams}
                 
                 selected_team_id = st.selectbox(
                     "Wähle ein Team:",
@@ -262,7 +261,7 @@ elif draft_status == "team_draft":
                 with col1:
                     if st.button(f"✅ Team picken", key="pick_button"):
                         save_draft_pick(season_id, current_pick_player_pos, selected_team_id, current_pick_number)
-                        st.success(f"✅ {current_pick_player_name} hat {[t['name'] for t in all_teams if t['id'] == selected_team_id][0]} gepickt!")
+                        st.success(f"✅ {current_pick_player_name} hat {[t['team_name'] for t in all_teams if t['id'] == selected_team_id][0]} gepickt!")
                         st.rerun()
                 
                 with col2:
@@ -271,6 +270,7 @@ elif draft_status == "team_draft":
                             last_pick = draft_picks[-1]
                             try:
                                 supabase.table("draft_picks").delete().eq("id", last_pick["id"]).execute()
+                                st.cache_data.clear()
                                 st.warning(f"🗑️ Letzter Pick gelöscht!")
                                 st.rerun()
                             except Exception as e:
@@ -295,6 +295,7 @@ elif draft_status == "team_draft":
                     supabase.table("draft_picks").delete().gt("id", 0).eq("season_id", season_id).execute()
                     # Reset Draft-Order
                     update_draft_status(season_id, "waiting")
+                    st.cache_data.clear()
                     st.warning("🔄 Draft wurde zurückgesetzt!")
                     st.rerun()
                 except Exception as e:
@@ -303,5 +304,6 @@ elif draft_status == "team_draft":
         with col2:
             if st.button("✅ Draft abschließen", key="complete_draft"):
                 complete_draft(season_id)
+                st.cache_data.clear()
                 st.success("🎉 Draft abgeschlossen!")
                 st.rerun()
