@@ -206,23 +206,90 @@ elif draft_status == "drawing":
 
 elif draft_status == "team_draft":
     st.subheader("🏆 Team-Draft")
-    st.write("Der Team-Draft läuft... (noch nicht implementiert)")
     
-    if is_admin:
-        if st.button("✅ Draft abschließen", key="complete_draft"):
-            complete_draft(season_id)
-            st.rerun()
-    else:
-        st.info("👀 Der Team-Draft läuft...")
-
-elif draft_status == "completed":
-    st.success("🎉 Draft abgeschlossen!")
-    
+    draft_order = get_draft_order(season_id)
     draft_picks = get_draft_picks(season_id)
-    if draft_picks:
-        st.dataframe(draft_picks)
+    
+    # Bestimme aktuelle Pick-Nummer
+    current_pick_number = len(draft_picks) + 1
+    players_count = len(players)
+    
+    # Zeige aktuelle Reihenfolge
+    st.write("---")
+    st.write("**Draft-Reihenfolge:**")
+    for i, pos in enumerate(draft_order[:players_count], 1):
+        player_name = player_names[pos-1]
+        status = "✅" if i < current_pick_number else ("▶️ **AKTIV**" if i == current_pick_number else "⏳")
+        st.write(f"{status} Pick {i}: {player_name}")
+    st.write("---")
+    
+    # Nur der aktuelle Spieler kann ein Team picken
+    current_pick_player_pos = draft_order[current_pick_number - 1] if current_pick_number <= players_count else None
+    current_pick_player_name = player_names[current_pick_player_pos - 1] if current_pick_player_pos else None
+    
+    if current_pick_number <= players_count:
+        if current_player == current_pick_player_name:
+            st.info(f"🎯 Du bist an der Reihe! Pick {current_pick_number}")
+            
+            # Hole verfügbare Teams
+            all_teams = get_teams_for_season(season_id)
+            picked_team_ids = [p["team_id"] for p in draft_picks]
+            available_teams = [t for t in all_teams if t["id"] not in picked_team_ids]
+            
+            if available_teams:
+                team_options = {t["id"]: f"{t['logo']} {t['name']}" for t in available_teams}
+                
+                selected_team_id = st.selectbox(
+                    "Wähle ein Team:",
+                    options=list(team_options.keys()),
+                    format_func=lambda x: team_options[x],
+                    key=f"team_select_{current_pick_number}"
+                )
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button(f"✅ Team picken", key="pick_button"):
+                        save_draft_pick(season_id, current_pick_player_pos, selected_team_id, current_pick_number)
+                        st.success(f"✅ {current_pick_player_name} hat {[t['name'] for t in all_teams if t['id'] == selected_team_id][0]} gepickt!")
+                        st.rerun()
+                
+                with col2:
+                    if st.button("🗑️ Fehlpick löschen", key="delete_pick"):
+                        if len(draft_picks) > 0:
+                            last_pick = draft_picks[-1]
+                            try:
+                                supabase.table("draft_picks").delete().eq("id", last_pick["id"]).execute()
+                                st.warning(f"🗑️ Letzter Pick gelöscht!")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Fehler beim Löschen: {str(e)}")
+            else:
+                st.success("🎉 Alle Teams sind gepickt!")
+        else:
+            st.info(f"⏳ {current_pick_player_name} ist an der Reihe...")
     else:
-        st.info("Noch keine Picks gespeichert.")
-
-else:
-    st.warning(f"⚠️ Unbekannter Draft-Status: {draft_status}")
+        st.success("🎉 Draft abgeschlossen!")
+    
+    # Admin-Optionen
+    if is_admin:
+        st.write("---")
+        st.subheader("🔧 Admin-Optionen")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🔄 Draft neu starten", key="restart_draft"):
+                try:
+                    # Lösche alle Draft-Picks
+                    supabase.table("draft_picks").delete().gt("id", 0).eq("season_id", season_id).execute()
+                    # Reset Draft-Order
+                    update_draft_status(season_id, "waiting")
+                    st.warning("🔄 Draft wurde zurückgesetzt!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Fehler beim Zurücksetzen: {str(e)}")
+        
+        with col2:
+            if st.button("✅ Draft abschließen", key="complete_draft"):
+                complete_draft(season_id)
+                st.success("🎉 Draft abgeschlossen!")
+                st.rerun()
