@@ -25,12 +25,12 @@ def get_or_create_season(season_name):
     # Erstelle neue Saison
     new_season = {
         "name": season_name,
-        "created_at": datetime.now().isoformat(),
-        "draft_status": "waiting",
+        "is_active": True,
         "draft_order": None
     }
     result = supabase.table("seasons").insert(new_season).execute()
     return result.data[0] if result.data else new_season
+    
 
 def get_players():
     """Holt alle Spieler aus der DB."""
