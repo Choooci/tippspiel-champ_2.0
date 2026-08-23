@@ -245,7 +245,7 @@ def get_teams_for_season(
 def get_draft_order(
     season_id: int,
 ) -> list[dict]:
-    """Lädt vier Sitzplätze und erzeugt daraus 16 Draftpositionen."""
+    """Lädt die vier Sitzplätze und erzeugt 16 Draftpositionen."""
 
     response = (
         supabase
@@ -266,7 +266,7 @@ def get_draft_order(
         for row in sitzreihenfolge
     ]
 
-    komplette_reihenfolge = erstelle_snake_reihenfolge(
+    komplette_reihenfolge = auslosung_zu_draft_order(
         sitzreihenfolge_ids
     )
 
