@@ -64,13 +64,28 @@ def save_draft_order(season_id, draft_order):
     except Exception as e:
         st.error(f"Fehler beim Speichern: {str(e)}")
 
-def get_draft_status(season_id):
-    """Holt aktuellen Draft-Status."""
-    try:
-        result = supabase.table("seasons").select("draft_status").eq("id", season_id).single().execute()
-        return result.data.get("draft_status", "waiting") if result.data else "waiting"
-    except:
-        return "waiting"
+elif draft_status == "drawing":
+    st.success("✅ Draft-Reihenfolge wurde ausgelost!")
+    
+    draft_order = get_draft_order(season_id)
+    
+    # Zeige die Draft-Reihenfolge an
+    st.subheader("🎲 Draft-Reihenfolge:")
+    if draft_order:
+        order_list = [int(d) for d in draft_order[:len(players)]]
+        st.write("---")
+        for i, pos in enumerate(order_list, 1):
+            st.write(f"**Pick {i}:** {player_names[pos-1]}")
+        st.write("---")
+    
+    # Nur Choci kann weiter machen
+    if is_admin:
+        st.info("Du bist Admin – Starte jetzt den Team-Draft!")
+        if st.button("➡️ Jetzt zum Team-Draft starten", key="start_draft"):
+            update_draft_status(season_id, "team_draft")
+            st.rerun()
+    else:
+        st.info("⏳ Warte bis Choci den Team-Draft startet...")
 
 def update_draft_status(season_id, status):
     """Updated Draft-Status."""
