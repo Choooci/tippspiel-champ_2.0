@@ -141,7 +141,35 @@ with tab1:
         st.warning("⚠️ Für diese Saison sind noch keine Teams in der Datenbank.")
         st.stop()
     
-    st.info("Hier werden die gepickten Teams pro Spieler angezeigt (wenn implementiert).")
+# ============================================
+# GEPICKTE TEAMS ANZEIGEN
+# ============================================
+
+st.subheader(f"📌 Gepickte Teams – {selected_player_name}")
+
+# Gepickte Teams aus Datenbank abrufen
+response = supabase.table('player_picks').select('*').eq('season_id', season_id).eq('player_id', selected_player["id"]).order('pick_order', desc=False).execute()
+gepickte_teams = response.data if response.data else []
+
+if gepickte_teams:
+    # Teams-Mapping erstellen für schnelle Zuordnung
+    teams_dict = {t["id"]: t for t in teams}
+    
+    # Gepickte Teams in Spalten darstellen
+    cols = st.columns(len(gepickte_teams))
+    for idx, pick in enumerate(gepickte_teams):
+        team = teams_dict.get(pick["team_id"])
+        if team:
+            with cols[idx]:
+                st.markdown(f"""
+                <div style='text-align: center; padding: 10px; border: 2px solid #1f77b4; border-radius: 8px;'>
+                    <h4>Pick {pick['pick_order']}</h4>
+                    <img src='{team['logo_url']}' width='80' style='margin: 10px 0;'><br>
+                    <b>{team['team_name']}</b>
+                </div>
+                """, unsafe_allow_html=True)
+else:
+    st.info("📭 Noch keine Teams gepickt.")
 
 # ============================================
 # TAB 2: TOP-6 TIPPS
