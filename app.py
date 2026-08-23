@@ -242,28 +242,7 @@ with tab1:
 # ============ TAB 2: TABELLE & ERGEBNISSE ============
 with tab2:
     st.subheader("📊 Bundesliga-Tabelle 2026-27")
-    
-    table_data = get_bundesliga_table()
-    
-    if table_data:
-        st.dataframe(
-            [
-                {
-                    "Platz": t["shortTableType"],
-                    "Team": t["teamName"],
-                    "Spiele": t["matches"],
-                    "W": t["won"],
-                    "U": t["draw"],
-                    "V": t["lost"],
-                    "Tore": f"{t['goalsFavor']}:{t['goalsAgainst']}",
-                    "Punkte": t["points"]
-                }
-                for t in sorted(table_data, key=lambda x: x["points"], reverse=True)
-            ],
-            use_container_width=True
-        )
-    else:
-        st.warning("Konnte Tabelle nicht laden...")
+    st.info("Tabelle wird noch implementiert...")
 
 # ============ TAB 3: ADMIN ============
 with tab3:
