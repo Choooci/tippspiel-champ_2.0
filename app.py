@@ -132,10 +132,6 @@ tab1, tab2, tab3 = st.tabs(["🎲 Draft", "📊 Top-6 Tipps", "🏆 Bundesliga-T
 # TAB 1: DRAFT
 # ============================================
 
-# ============================================
-# TAB 1: DRAFT
-# ============================================
-
 with tab1:
     st.header("🎲 Team-Draft")
     
@@ -161,7 +157,7 @@ with tab1:
         
         # Nächste Pick-Nummer ermitteln
         next_pick_number = len(all_picks) + 1
-        total_teams = len(teams)
+        total_teams = 16  # NUR 16 TEAMS STATT 18
         
         # Wer ist dran? (Snake-Draft-Reihenfolge)
         if next_pick_number <= total_teams:
@@ -180,24 +176,18 @@ with tab1:
             if selected_player["id"] == current_player["id"]:
                 st.subheader(f"🎪 Wähle dein Team")
                 
-                # Teams in 2er-Spalten anzeigen
-                cols = st.columns(2)
-                selected_team = None
-                
+                # Logo-Vorschau
+                st.write("**Team-Logos:**")
+                cols = st.columns(4)
                 for idx, team in enumerate(available_teams):
-                    with cols[idx % 2]:
-                        col1, col2 = st.columns([1, 3])
-                        with col1:
-                            if st.button("📌", key=f"pick_{team['id']}", help=team['team_name']):
-                                selected_team = team
-                        with col2:
-                            st.image(team['logo_url'], width=80)
-                            st.write(f"**{team['team_name']}**")
+                    with cols[idx % 4]:
+                        st.image(team['logo_url'], width=100)
                 
-                # Alternativ: Selectbox
                 st.divider()
+                
+                # Dropdown nur
                 team_options = [f"{t['team_name']}" for t in available_teams]
-                selected_team_name = st.selectbox("Oder hier auswählen", team_options)
+                selected_team_name = st.selectbox("Team auswählen", team_options)
                 selected_team = next(t for t in available_teams if t["team_name"] == selected_team_name)
                 
                 if st.button("✅ Team picken!", use_container_width=True, type="primary"):
@@ -228,13 +218,22 @@ with tab1:
                 team = teams_dict.get(pick["team_id"])
                 player = players_dict.get(pick["player_id"])
                 if team and player:
-                    col1, col2, col3 = st.columns([1, 2, 2])
+                    col1, col2, col3, col4 = st.columns([1, 2, 2, 1])
                     with col1:
                         st.write(f"**Pick {pick['pick_order']}**")
                     with col2:
                         st.write(player['name'])
                     with col3:
                         st.write(f"→ {team['team_name']}")
+                    with col4:
+                        if st.button("🗑️", key=f"delete_pick_{pick['id']}", help="Pick löschen"):
+                            try:
+                                supabase.table("player_picks").delete().eq("id", pick["id"]).execute()
+                                st.success("Pick gelöscht!")
+                                time.sleep(1)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Fehler beim Löschen: {str(e)}")
         else:
             st.info("Noch keine Teams gepickt.")
     
