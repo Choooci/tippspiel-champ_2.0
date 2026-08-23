@@ -202,7 +202,7 @@ if is_admin:
             st.subheader("Teams verwalten")
             
             if st.button("🔄 Teams von OpenLigaDB laden (2026)"):
-                load_teams_from_openligadb(2026)
+                load_teams_from_openligadb(2026, season_id)  # ✅ season_id mitgeben
             
             st.write("---")
             st.write("**Manuell hinzufügen:**")
