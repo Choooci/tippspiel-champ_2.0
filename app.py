@@ -246,7 +246,9 @@ elif draft_status == "team_draft":
             picked_team_ids = [p["team_id"] for p in draft_picks]
             available_teams = [t for t in all_teams if t["id"] not in picked_team_ids]
             
-            if available_teams:
+            if not all_teams:
+                st.warning("⚠️ Keine Teams in der Datenbank! Bitte zuerst Teams hinzufügen (Admin-Bereich).")
+            elif available_teams:
                 team_options = {t["id"]: f"{t['logo']} {t['name']}" for t in available_teams}
                 
                 selected_team_id = st.selectbox(
