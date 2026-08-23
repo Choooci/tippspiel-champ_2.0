@@ -56,6 +56,14 @@ def get_draft_order(season_id):
     except:
         return None
 
+def get_draft_status(season_id):
+    """Holt den Draft-Status einer Saison."""
+    try:
+        result = supabase.table("seasons").select("draft_status").eq("id", season_id).single().execute()
+        return result.data.get("draft_status") if result.data else "waiting"
+    except:
+        return "waiting"
+
 def save_draft_order(season_id, draft_order):
     """Speichert die ausgeloste Draft-Reihenfolge."""
     try:
