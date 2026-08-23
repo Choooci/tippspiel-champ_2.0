@@ -126,24 +126,35 @@ teams_info = {
 # SUPABASE-FUNKTIONEN (für die neue Saison mit Draft)
 # ============================================================
 
-def get_or_create_season(season_name):
-    """Holt die Saison aus Supabase oder legt sie neu an."""
+def get_or_create_season(season_name: str):
+    """Saison in Supabase anlegen oder holen."""
     try:
-        result = supabase.table("seasons").select("*").eq("season_name", season_name).single().execute()
-        if result.data:
-            return result.data
-    except Exception:
-        pass
-
-    # Saison existiert noch nicht -> neu anlegen
-    new_season = {
-        "season_name": season_name,
-        "draft_completed": False,
-        "draft_order": None,
-        "draft_stage": "waiting"  # waiting, drawing, team_draft, completed
-    }
-    result = supabase.table("seasons").insert(new_season).execute()
-    return result.data[0]
+        # Erst prüfen, ob Saison schon existiert
+        result = supabase.table("seasons").select("*").eq("text", season_name).execute()
+        
+        if result.data and len(result.data) > 0:
+            return result.data[0]
+        
+        # Wenn nicht → neu anlegen
+        new_season = {
+            "text": season_name,  # ← nicht season_name, sondern text!
+            "is_active": True,
+            "draft_status": "waiting",
+            "draft_order": ""
+        }
+        
+        result = supabase.table("seasons").insert(new_season).execute()
+        
+        if result.data and len(result.data) > 0:
+            return result.data[0]
+        else:
+            st.error(f"❌ Saison konnte nicht angelegt werden. Response: {result}")
+            return None
+            
+    except Exception as e:
+        st.error(f"❌ Fehler bei Saison-Verwaltung: {str(e)}")
+        st.write(f"Details: {e}")
+        return None
 
 
 def get_players():
@@ -199,12 +210,35 @@ def get_draft_stage(season_id):
         return "waiting"
 
 
-def update_draft_stage(season_id, stage):
-    """Setzt den Draft-Status."""
+def get_or_create_season(season_name: str):
+    """Saison in Supabase anlegen oder holen."""
     try:
-        supabase.table("seasons").update({"draft_stage": stage}).eq("id", season_id).execute()
+        # Erst prüfen, ob Saison schon existiert
+        result = supabase.table("seasons").select("*").eq("text", season_name).execute()
+        
+        if result.data and len(result.data) > 0:
+            return result.data[0]
+        
+        # Wenn nicht → neu anlegen
+        new_season = {
+            "text": season_name,  # ← nicht season_name, sondern text!
+            "is_active": True,
+            "draft_status": "waiting",
+            "draft_order": ""
+        }
+        
+        result = supabase.table("seasons").insert(new_season).execute()
+        
+        if result.data and len(result.data) > 0:
+            return result.data[0]
+        else:
+            st.error(f"❌ Saison konnte nicht angelegt werden. Response: {result}")
+            return None
+            
     except Exception as e:
-        st.error(f"Fehler beim Aktualisieren des Draft-Status: {str(e)}")
+        st.error(f"❌ Fehler bei Saison-Verwaltung: {str(e)}")
+        st.write(f"Details: {e}")
+        return None
 
 
 def get_draft_order(season_id):
