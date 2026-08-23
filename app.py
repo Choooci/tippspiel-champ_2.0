@@ -245,7 +245,8 @@ def get_teams_for_season(
 def get_draft_order(
     season_id: int,
 ) -> list[dict]:
-    """Lädt die Draftreihenfolge."""
+    """Lädt vier Sitzplätze und erzeugt daraus 16 Draftpositionen."""
+
     response = (
         supabase
         .table("draft_order")
@@ -255,33 +256,50 @@ def get_draft_order(
         .execute()
     )
 
-    return daten_oder_leere_liste(response)
+    sitzreihenfolge = daten_oder_leere_liste(response)
+
+    if len(sitzreihenfolge) != ANZAHL_SPIELER:
+        return []
+
+    sitzreihenfolge_ids = [
+        row["player_id"]
+        for row in sitzreihenfolge
+    ]
+
+    komplette_reihenfolge = erstelle_snake_reihenfolge(
+        sitzreihenfolge_ids
+    )
+
+    return [
+        {
+            "season_id": season_id,
+            "position": position,
+            "player_id": player_id,
+        }
+        for position, player_id in enumerate(
+            komplette_reihenfolge,
+            start=1,
+        )
+    ]
 
 
 def save_draft_order(
     season_id: int,
-    sitzreihenfolge: list[int],
+    player_ids: list[int],
 ) -> None:
-    """
-    Speichert die Auslosung und erzeugt daraus 16 Picks.
-    """
+    """Speichert nur die vier ausgelosten Sitzplätze."""
 
-    if len(sitzreihenfolge) != ANZAHL_SPIELER:
+    if len(player_ids) != ANZAHL_SPIELER:
         raise ValueError(
             f"Es müssen genau {ANZAHL_SPIELER} Spieler "
-            f"ausgelost werden."
+            f"vorhanden sein."
         )
 
-    if len(set(sitzreihenfolge)) != ANZAHL_SPIELER:
+    if len(set(player_ids)) != ANZAHL_SPIELER:
         raise ValueError(
             "Jeder Spieler darf nur einmal ausgelost werden."
         )
 
-    komplette_reihenfolge = auslosung_zu_draft_order(
-        sitzreihenfolge
-    )
-
-    # Alte Reihenfolge löschen
     (
         supabase
         .table("draft_order")
@@ -290,7 +308,6 @@ def save_draft_order(
         .execute()
     )
 
-    # Neue Reihenfolge speichern
     rows = [
         {
             "season_id": season_id,
@@ -298,7 +315,7 @@ def save_draft_order(
             "position": position,
         }
         for position, player_id in enumerate(
-            komplette_reihenfolge,
+            player_ids,
             start=1,
         )
     ]
@@ -315,12 +332,11 @@ def save_draft_order(
             "Die Draftreihenfolge konnte nicht gespeichert werden."
         )
 
-    # Nur die vier Sitzplätze in seasons speichern
     (
         supabase
         .table("seasons")
         .update({
-            "draft_order": json.dumps(sitzreihenfolge),
+            "draft_order": json.dumps(player_ids),
             "draft_status": "drawing",
         })
         .eq("id", season_id)
