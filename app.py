@@ -56,7 +56,7 @@ def get_draft_order(season_id):
     except:
         return None
 
-ef save_draft_order(season_id, draft_order):
+def save_draft_order(season_id, draft_order):
     """Speichert die ausgeloste Draft-Reihenfolge."""
     try:
         supabase.table("seasons").update({"draft_order": draft_order}).eq("id", season_id).execute()
