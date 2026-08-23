@@ -132,6 +132,10 @@ tab1, tab2, tab3 = st.tabs(["🎲 Draft", "📊 Top-6 Tipps", "🏆 Bundesliga-T
 # TAB 1: DRAFT
 # ============================================
 
+# ============================================
+# TAB 1: DRAFT
+# ============================================
+
 with tab1:
     st.header("🎲 Team-Draft")
     
@@ -140,6 +144,99 @@ with tab1:
     if not teams:
         st.warning("⚠️ Für diese Saison sind noch keine Teams in der Datenbank.")
         st.stop()
+    
+    # Draft-Status abrufen
+    season = get_season(season_id)
+    draft_completed = season.get("draft_completed", False)
+    
+    if draft_completed:
+        st.success("✅ Draft abgeschlossen!")
+        st.info("Alle Teams wurden gepickt. Die Saison kann starten!")
+    else:
+        st.subheader("📋 Draft-Reihenfolge")
+        
+        # Alle Picks abrufen
+        response = supabase.table('player_picks').select('*').eq('season_id', season_id).order('pick_order', desc=False).execute()
+        all_picks = response.data if response.data else []
+        
+        # Nächste Pick-Nummer ermitteln
+        next_pick_number = len(all_picks) + 1
+        total_teams = len(teams)
+        
+        # Wer ist dran? (Snake-Draft-Reihenfolge)
+        if next_pick_number <= total_teams:
+            # Position aus Snake-Draft ermitteln (0-basiert)
+            draft_position = int(SNAKE_DRAFT_ORDER[(next_pick_number - 1) % len(SNAKE_DRAFT_ORDER)])
+            current_player = players[draft_position - 1]  # 1-basiert zu 0-basiert
+            
+            st.info(f"🎯 **{current_player['name']}** ist dran! (Pick {next_pick_number}/{total_teams})")
+            
+            # Bereits gepickte Teams ausblenden
+            picked_team_ids = [p["team_id"] for p in all_picks]
+            available_teams = sorted([t for t in teams if t["id"] not in picked_team_ids], 
+                                   key=lambda x: x["team_name"])
+            
+            # Team-Auswahl (nur wenn der richtige Spieler eingeloggt ist)
+            if selected_player["id"] == current_player["id"]:
+                st.subheader(f"🎪 Wähle dein Team")
+                
+                # Teams in 2er-Spalten anzeigen
+                cols = st.columns(2)
+                selected_team = None
+                
+                for idx, team in enumerate(available_teams):
+                    with cols[idx % 2]:
+                        col1, col2 = st.columns([1, 3])
+                        with col1:
+                            if st.button("📌", key=f"pick_{team['id']}", help=team['team_name']):
+                                selected_team = team
+                        with col2:
+                            st.image(team['logo_url'], width=80)
+                            st.write(f"**{team['team_name']}**")
+                
+                # Alternativ: Selectbox
+                st.divider()
+                team_options = [f"{t['team_name']}" for t in available_teams]
+                selected_team_name = st.selectbox("Oder hier auswählen", team_options)
+                selected_team = next(t for t in available_teams if t["team_name"] == selected_team_name)
+                
+                if st.button("✅ Team picken!", use_container_width=True, type="primary"):
+                    try:
+                        supabase.table("player_picks").insert({
+                            "season_id": season_id,
+                            "player_id": current_player["id"],
+                            "team_id": selected_team["id"],
+                            "pick_order": next_pick_number
+                        }).execute()
+                        st.success(f"✅ {current_player['name']} hat {selected_team['team_name']} gepickt!")
+                        time.sleep(2)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Fehler beim Speichern: {str(e)}")
+            else:
+                st.warning(f"⏳ Warte, bis {current_player['name']} pickt...")
+        
+        # Bisher gepickte Teams anzeigen
+        st.divider()
+        st.subheader("📌 Bisherige Picks")
+        
+        if all_picks:
+            teams_dict = {t["id"]: t for t in teams}
+            players_dict = {p["id"]: p for p in players}
+            
+            for pick in all_picks:
+                team = teams_dict.get(pick["team_id"])
+                player = players_dict.get(pick["player_id"])
+                if team and player:
+                    col1, col2, col3 = st.columns([1, 2, 2])
+                    with col1:
+                        st.write(f"**Pick {pick['pick_order']}**")
+                    with col2:
+                        st.write(player['name'])
+                    with col3:
+                        st.write(f"→ {team['team_name']}")
+        else:
+            st.info("Noch keine Teams gepickt.")
     
 # ============================================
 # GEPICKTE TEAMS ANZEIGEN
