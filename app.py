@@ -120,7 +120,7 @@ def save_draft_pick(season_id, player_id, team_id, pick_order):
     except Exception as e:
         st.error(f"Fehler beim Speichern des Draft-Picks: {str(e)}")
 
-def load_teams_from_openligadb(season_year):
+ddef load_teams_from_openligadb(season_year):
     """Lädt Teams von OpenLigaDB und speichert sie in der DB."""
     try:
         url = f"https://api.openligadb.de/getbltable/bl1/{season_year}"
@@ -129,24 +129,20 @@ def load_teams_from_openligadb(season_year):
         
         table_data = response.json()
         
+        # Lösche zuerst alle Teams für diese Saison
+        supabase.table("teams").delete().eq("season_id", season_id).execute()
+        
         added_count = 0
         
         for team in table_data:
-            # Prüfe, ob Team bereits existiert
-            existing = supabase.table("teams").select("*").eq("team_name", team["teamName"]).eq("season_id", season_id).execute()
-            
-            if not existing.data:
-                supabase.table("teams").insert({
-                    "season_id": season_id,
-                    "team_name": team["teamName"],
-                    "logo_url": team.get("teamIconUrl", "⚽")
-                }).execute()
-                added_count += 1
+            supabase.table("teams").insert({
+                "season_id": season_id,
+                "team_name": team["teamName"],
+                "logo_url": team.get("teamIconUrl", "⚽")
+            }).execute()
+            added_count += 1
         
-        if added_count > 0:
-            st.success(f"✅ {added_count} neue Teams geladen!")
-        else:
-            st.info("ℹ️ Alle Teams sind bereits in der DB.")
+        st.success(f"✅ {added_count} Teams geladen!")
         st.rerun()
     except Exception as e:
         st.error(f"Fehler beim Laden von OpenLigaDB: {str(e)}")
@@ -309,6 +305,19 @@ elif draft_status == "team_draft":
         st.write(f"{status} Pick {i}: {player_name}")
     st.write("---")
     
+    # Verfügbare Teams anzeigen
+    all_teams = get_teams_for_season(season_id)
+    picked_team_ids = [p["team_id"] for p in draft_picks]
+    available_teams = [t for t in all_teams if t["id"] not in picked_team_ids]
+    
+    st.write("**Verfügbare Teams:**")
+    cols = st.columns(6)
+    for idx, team in enumerate(available_teams):
+        with cols[idx % 6]:
+            st.image(team["logo_url"], width=50, use_column_width=False)
+            st.caption(team["team_name"])
+    st.write("---")
+    
     # Nur der aktuelle Spieler kann ein Team picken
     current_pick_player_pos = draft_order[current_pick_number - 1] if current_pick_number <= players_count else None
     current_pick_player_name = player_names[current_pick_player_pos - 1] if current_pick_player_pos else None
@@ -317,15 +326,11 @@ elif draft_status == "team_draft":
         if current_player == current_pick_player_name:
             st.info(f"🎯 Du bist an der Reihe! Pick {current_pick_number}")
             
-            # Hole verfügbare Teams
-            all_teams = get_teams_for_season(season_id)
-            picked_team_ids = [p["team_id"] for p in draft_picks]
-            available_teams = [t for t in all_teams if t["id"] not in picked_team_ids]
-            
             if not all_teams:
                 st.warning("⚠️ Keine Teams in der Datenbank! Bitte zuerst Teams hinzufügen (Admin-Bereich).")
             elif available_teams:
-                team_options = {t["id"]: f"{t['logo_url']} {t['team_name']}" for t in available_teams}
+                # Selectbox mit Team-Namen (nicht URLs!)
+                team_options = {t["id"]: t["team_name"] for t in available_teams}
                 
                 selected_team_id = st.selectbox(
                     "Wähle ein Team:",
