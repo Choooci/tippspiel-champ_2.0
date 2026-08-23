@@ -125,8 +125,72 @@ selected_player = next((p for p in players if p["name"] == selected_player_name)
 
 st.divider()
 
+
+# ============================================
+# DRAFT-REIHENFOLGE AUSLOSEN
+# ============================================
+
+st.divider()
+st.header("🎰 Draft-Reihenfolge auslosen")
+
+draft_order = get_draft_order(season_id)
+
+if not draft_order:
+    st.warning("⚠️ Draft-Reihenfolge wurde noch nicht ausgelost!")
+    
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col2:
+        if st.button("🎲 REIHENFOLGE AUSLOSEN", use_container_width=True, type="primary"):
+            import random
+            
+            # Spieler shufflen
+            shuffled_players = players.copy()
+            random.shuffle(shuffled_players)
+            draft_order = [p["id"] for p in shuffled_players]
+            
+            # Speichern
+            save_draft_order(season_id, draft_order)
+            st.session_state.show_draw = True
+            st.rerun()
+    
+    # Spannende Animation wenn gerade ausgelost
+    if st.session_state.get("show_draw", False):
+        st.balloons()
+        time.sleep(0.5)
+else:
+    # Reihenfolge anzeigen
+    st.success("✅ Draft-Reihenfolge wurde ausgelost!")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    for idx, player_id in enumerate(draft_order):
+        player = next((p for p in players if p["id"] == player_id), None)
+        if player:
+            cols = [col1, col2, col3, col4]
+            with cols[idx % 4]:
+                st.markdown(f"""
+                <div style='text-align: center; padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; color: white;'>
+                    <h3 style='margin: 0; font-size: 2em;'>#{idx + 1}</h3>
+                    <p style='margin: 10px 0 0 0; font-size: 1.2em;'><b>{player['name']}</b></p>
+                </div>
+                """, unsafe_allow_html=True)
+    
+    st.divider()
+
+st.divider()
+
+
 # Tabs
 tab1, tab2, tab3 = st.tabs(["🎲 Draft", "📊 Top-6 Tipps", "🏆 Bundesliga-Tabelle"])
+
+def get_draft_order(season_id):
+    """Holt die ausgeloste Draft-Reihenfolge."""
+    result = supabase.table("seasons").select("draft_order").eq("id", season_id).single().execute()
+    return result.data.get("draft_order") if result.data else None
+
+def save_draft_order(season_id, draft_order):
+    """Speichert die ausgeloste Draft-Reihenfolge."""
+    supabase.table("seasons").update({"draft_order": draft_order}).eq("id", season_id).execute()
+
 
 # ============================================
 # TAB 1: DRAFT
