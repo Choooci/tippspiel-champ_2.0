@@ -65,15 +65,15 @@ def save_draft_order(season_id, draft_order):
 def get_draft_stage(season_id):
     """Holt aktuellen Draft-Status."""
     try:
-        result = supabase.table("seasons").select("draft_stage").eq("id", season_id).single().execute()
-        return result.data.get("draft_stage") if result.data else "waiting"
+        result = supabase.table("seasons").select("is_active").eq("id", season_id).single().execute()
+        return result.data.get("is_active") if result.data else False
     except:
-        return "waiting"
+        return False
 
 def update_draft_stage(season_id, stage):
     """Updated Draft-Status."""
     try:
-        supabase.table("seasons").update({"draft_stage": stage}).eq("id", season_id).execute()
+        supabase.table("seasons").update({"is_active": stage == "drawing"}).eq("id", season_id).execute()
     except Exception as e:
         st.error(f"Fehler: {str(e)}")
 
@@ -81,8 +81,7 @@ def complete_draft(season_id):
     """Beendet den Draft."""
     try:
         supabase.table("seasons").update({
-            "draft_completed": True,
-            "draft_stage": "completed"
+            "is_active": False
         }).eq("id", season_id).execute()
         st.success("Draft abgeschlossen!")
     except Exception as e:
